@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 CXX="${CXX:-g++-9}"
 SDE="${SDE:-}"
@@ -14,7 +14,7 @@ fi
 function compile() {
     local patch
     if [[ -n "$1" ]];then
-        patch='asm volatile ("FINIT");'
+        patch='asm volatile ("FNINIT");'
     fi
     $CXX $CXX_FLAGS -x c++ -o poc.minimal - << END
 #include <unordered_map> // map is ok
@@ -39,33 +39,37 @@ END
 }
 
 function observe() {
-    if type gdb;then
+    if type gdb > /dev/null;then
         gdb \
-            -ex 'b calc' \
-            -ex 'r' \
-            -ex 'finish' \
             -ex 'b *main+136' \
-            -ex 'c' \
+            -ex 'r' \
+            -ex 'print $st0' \
             -ex 'print *(size_t *)($rsp+0x8)' \
             -ex 'si' \
             -ex 'print $st0' \
-            --batch --silent ./poc.minimal
+            --batch --silent ./poc.minimal | grep '\$'
     fi
 }
 
 
 compile
+echo "compile crash done...."
 if $SDE ./poc.minimal;then
     echo "poc failed.... tell me please"
     exit 1
+else
+    observe
+    echo "crash as expected!"
 fi
-observe
 rm ./poc.minimal
 
 compile 1
+echo "compile patch done...."
 if ! $SDE ./poc.minimal;then
     echo "patch failed.... tell me please"
     exit 1
+else
+    observe
+    echo "patch work as expected!"
 fi
-observe
 rm ./poc.minimal
