@@ -7,7 +7,7 @@ SDE="${SDE:-}"
 ARCH="skylake-avx512"
 CXX_FLAGS="-std=c++17 -Wall -O2 -march=$ARCH"
 BASE_DIR="$(realpath "$(dirname "$0")")/"
-EXE_NAME="./poc.minimal"
+EXE_NAME="./poc"
 if [[ "$BASE_DIR" =~ /proc/ ]];then
     BASE_DIR=''
 fi
@@ -17,13 +17,13 @@ function compile() {
     if [[ -n "$1" ]];then
         patch="-DPATCH"
     fi
-    $CXX $CXX_FLAGS $patch -x c++ -o "$EXE_NAME" - << END
-#include <cstdio>
+    $CXX $CXX_FLAGS $patch -x c++ -o "${EXE_NAME}" - << END
+#include <unordered_map> // map is ok
 #include "${BASE_DIR}x86-simd-sort/src/x86simdsort-static-incl.h"
 
 double calc(size_t size) {
-    auto ptr = new double[size]{1};
-    auto arg = x86simdsortStatic::argsort(ptr, size, false, true);
+    auto ptr = new double[size]{0};
+    auto arg = x86simdsortStatic::argselect(ptr, 0, size);
 #ifdef PATCH
     asm volatile ("FNINIT");
 #endif
@@ -33,12 +33,10 @@ double calc(size_t size) {
 }
 
 int main() {
-    double ret = calc(65); // [65, 256]
-    size_t a = 1ull;
-    double ret_1 = a / ret;
-    long double lret_1 = a / (long double)ret;
-    printf("ret=%lf, 1/ret=%lf, 1/(long double)ret=%Lf\n", ret, ret_1, lret_1);
-    return std::isnan(lret_1);
+    std::unordered_map<size_t, size_t> amap;
+    amap.clear();
+    calc(65); // [65, 256]
+    amap.rehash(1);
 }
 END
 }
@@ -46,15 +44,17 @@ END
 function observe() {
     if type gdb > /dev/null;then
         local bp
-        bp="$(objdump -d --prefix-address "$EXE_NAME" | grep fld1 | awk '{$2 = substr($2, 2, length($2)-2); print $2}')"
-        echo 'tracking $st0 with gdb'
+        bp="$(objdump -d --prefix-address "$EXE_NAME" | grep fildll | awk '{$2 = substr($2, 2, length($2)-2); print $2}')"
+        echo "tracking ST(0)"
         gdb \
             -ex "b *$bp" \
             -ex 'r' \
-            -ex 'print "ST(0) before convert a"' \
+            -ex 'print "ST(0) before do size_t to long double convert" ' \
             -ex 'print $st0' \
+            -ex 'print "The size_t value to be converted" ' \
+            -ex 'print *(size_t *)($rsp+0x8)' \
+            -ex 'print "ST(0) after do size_t to long double convert" ' \
             -ex 'si' \
-            -ex 'print "ST(0) after convert a"' \
             -ex 'print $st0' \
             --batch --silent "$EXE_NAME" | grep '\$'
     fi
