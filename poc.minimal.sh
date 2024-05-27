@@ -29,7 +29,8 @@ double calc(size_t size) {
     auto ptr = new double[size]{1};
     auto arg = x86simdsortStatic::argsort(ptr, size, false, true);
 #ifdef PATCH
-    asm volatile ("FNINIT");
+    // asm volatile ("FNINIT");
+    asm volatile ("EMMS");
 #endif
     auto ret = ptr[arg[0]];
     delete[] ptr;
